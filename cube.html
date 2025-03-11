@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controllable 3D Cube</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">
+        <h3>Controls:</h3>
+        <p>W - Move Forward</p>
+        <p>S - Move Backward</p>
+        <p>A - Move Left</p>
+        <p>D - Move Right</p>
+        <p>Space - Jump</p>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Basic setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue background
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // Add lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+        
+        // Create a colorful cube
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+        const cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
+        
+        // Create a ground plane
+        const groundGeometry = new THREE.PlaneGeometry(20, 20);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x999999 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+        ground.position.y = -1; // Position below the cube
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        // Position camera
+        camera.position.set(0, 2, 5);
+        camera.lookAt(cube.position);
+        
+        // Movement and physics variables
+        const moveSpeed = 0.1;
+        const jumpForce = 0.15;
+        const gravity = 0.01;
+        
+        let velocity = {
+            x: 0,
+            y: 0,
+            z: 0
+        };
+        
+        let isOnGround = true;
+        
+        // Control states
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            space: false
+        };
+        
+        // Event listeners for keyboard controls
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = true;
+            }
+            if (key === ' ') { // Space key
+                keys.space = true;
+            }
+        });
+        
+        document.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = false;
+            }
+            if (key === ' ') { // Space key
+                keys.space = false;
+            }
+        });
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Handle movement based on key presses
+            handleMovement();
+            
+            // Update physics
+            applyPhysics();
+            
+            // Make the cube rotate slowly to make it more interesting
+            cube.rotation.y += 0.01;
+            
+            renderer.render(scene, camera);
+        }
+        
+        function handleMovement() {
+            // Reset velocity
+            velocity.x = 0;
+            velocity.z = 0;
+            
+            // Apply movement based on keys pressed
+            if (keys.w) {
+                velocity.z = -moveSpeed;
+            }
+            if (keys.s) {
+                velocity.z = moveSpeed;
+            }
+            if (keys.a) {
+                velocity.x = -moveSpeed;
+            }
+            if (keys.d) {
+                velocity.x = moveSpeed;
+            }
+            
+            // Jump if on ground and space is pressed
+            if (keys.space && isOnGround) {
+                velocity.y = jumpForce;
+                isOnGround = false;
+            }
+        }
+        
+        function applyPhysics() {
+            // Apply gravity
+            velocity.y -= gravity;
+            
+            // Update position
+            cube.position.x += velocity.x;
+            cube.position.y += velocity.y;
+            cube.position.z += velocity.z;
+            
+            // Ground collision detection
+            if (cube.position.y <= 0) {
+                cube.position.y = 0;
+                velocity.y = 0;
+                isOnGround = true;
+            }
+            
+            // Simple boundary to keep the cube on the ground plane
+            const boundary = 9;
+            if (Math.abs(cube.position.x) > boundary) {
+                cube.position.x = Math.sign(cube.position.x) * boundary;
+            }
+            if (Math.abs(cube.position.z) > boundary) {
+                cube.position.z = Math.sign(cube.position.z) * boundary;
+            }
+            
+            // Update camera to follow the cube
+            camera.position.x = cube.position.x;
+            camera.position.z = cube.position.z + 5;
+            camera.lookAt(cube.position);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+        });
+        
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>
