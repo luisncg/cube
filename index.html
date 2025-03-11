@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controllable 3D Cube</title>
+    <title>Controllable 3D Cube with Touch Controls</title>
     <style>
         body {
             margin: 0;
@@ -19,6 +19,35 @@
             padding: 10px;
             border-radius: 5px;
         }
+        #touch-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            display: none; /* Hidden by default, shown via JS on mobile */
+        }
+        .touch-btn {
+            width: 60px;
+            height: 60px;
+            margin: 0 10px;
+            background-color: rgba(255,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: white;
+            user-select: none;
+            -webkit-user-select: none;
+            cursor: pointer;
+        }
+        .jump-btn {
+            width: 80px;
+            height: 40px;
+            border-radius: 20px;
+        }
     </style>
 </head>
 <body>
@@ -30,6 +59,15 @@
         <p>D - Move Right</p>
         <p>Space - Jump</p>
     </div>
+
+    <div id="touch-controls">
+        <div class="touch-btn" id="btn-left">←</div>
+        <div class="touch-btn" id="btn-forward">↑</div>
+        <div class="touch-btn" id="btn-right">→</div>
+        <div class="touch-btn" id="btn-backward">↓</div>
+        <div class="touch-btn jump-btn" id="btn-jump">JUMP</div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         // Basic setup
@@ -90,6 +128,56 @@
             d: false,
             space: false
         };
+        
+        // Detect if device is mobile
+        function isMobileDevice() {
+            return (typeof window.orientation !== "undefined") ||
+                   (navigator.userAgent.indexOf("IEMobile") !== -1) ||
+                   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+        
+        // Show touch controls if on mobile
+        if (isMobileDevice()) {
+            document.getElementById('touch-controls').style.display = 'flex';
+        }
+        
+        // Set up touch controls
+        const touchButtons = {
+            'btn-forward': { key: 'w', active: false },
+            'btn-left': { key: 'a', active: false },
+            'btn-backward': { key: 's', active: false },
+            'btn-right': { key: 'd', active: false },
+            'btn-jump': { key: 'space', active: false }
+        };
+        
+        // Set up touch event handlers
+        Object.keys(touchButtons).forEach(btnId => {
+            const btn = document.getElementById(btnId);
+            
+            // Start touch
+            btn.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                touchButtons[btnId].active = true;
+                keys[touchButtons[btnId].key] = true;
+                btn.style.backgroundColor = 'rgba(255,255,255,0.6)';
+            });
+            
+            // End touch
+            btn.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                touchButtons[btnId].active = false;
+                keys[touchButtons[btnId].key] = false;
+                btn.style.backgroundColor = 'rgba(255,255,255,0.3)';
+            });
+            
+            // Cancel touch
+            btn.addEventListener('touchcancel', function(e) {
+                e.preventDefault();
+                touchButtons[btnId].active = false;
+                keys[touchButtons[btnId].key] = false;
+                btn.style.backgroundColor = 'rgba(255,255,255,0.3)';
+            });
+        });
         
         // Event listeners for keyboard controls
         document.addEventListener('keydown', (event) => {
