@@ -156,10 +156,11 @@
             },
             medium: {
                 antialias: true,
-                objectCount: 10,
-                objectDetail: 8,
-                drawDistance: 500,
-                shadowsEnabled: false
+                objectCount: 8,         // Reduced from 10
+                objectDetail: 6,         // Reduced from 8
+                drawDistance: 400,       // Reduced from 500
+                shadowsEnabled: false,
+                pixelRatio: 0.9          // Added pixel ratio scaling
             },
             low: {
                 antialias: false,
@@ -259,7 +260,13 @@
                 powerPreference: 'high-performance'
             });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(currentQuality === 'low' ? 0.8 : window.devicePixelRatio);
+            
+            // Set pixel ratio based on quality
+            if (settings.pixelRatio) {
+                renderer.setPixelRatio(settings.pixelRatio);
+            } else {
+                renderer.setPixelRatio(currentQuality === 'low' ? 0.8 : window.devicePixelRatio);
+            }
             
             // Update camera far plane
             camera.far = settings.drawDistance;
@@ -333,7 +340,10 @@
                 const geometry = new THREE.BoxGeometry(1, 1, 1);
                 const material = new THREE.MeshStandardMaterial({ 
                     color: Math.random() * 0xffffff,
-                    flatShading: currentQuality === 'low'
+                    flatShading: currentQuality !== 'high',
+                    // Optimize materials for medium quality
+                    roughness: currentQuality === 'medium' ? 0.8 : 0.5,
+                    metalness: currentQuality === 'medium' ? 0.2 : 0.5
                 });
                 const cube = new THREE.Mesh(geometry, material);
                 
@@ -542,8 +552,11 @@
             // Process player movement and physics
             updatePlayerPhysics(deltaTime);
             
-            // Only skip rendering on low quality, not movement calculations
-            if (currentQuality === 'low' && frameCount % 2 === 0) {
+            // Skip rendering for optimization
+            // Low quality: render every other frame
+            // Medium quality: render 4 out of 5 frames
+            if ((currentQuality === 'low' && frameCount % 2 === 0) ||
+                (currentQuality === 'medium' && frameCount % 5 === 0)) {
                 return;
             }
             
