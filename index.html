@@ -54,6 +54,14 @@
         <div id="controls" style="margin-top: 10px;">
             <p>Controls: WASD to move, Mouse to look around</p>
         </div>
+        <div style="margin-top: 10px;">
+            <label for="qualitySelect">Graphics Quality:</label>
+            <select id="qualitySelect">
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+            </select>
+        </div>
     </div>
     
     <div id="fpsCounter">FPS: 0</div>
@@ -73,20 +81,40 @@
         let playerName = "";
         let playerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
         
+        // Time tracking for frame-independent movement
+        let lastTime = null;
+        
         // FPS counter variables
         let fpsCounter;
         let frameCount = 0;
         let lastFpsUpdate = 0;
-
-        // DOM elements
-        const hostButton = document.getElementById('hostGame');
-        const joinButton = document.getElementById('joinGame');
-        const roomIdInput = document.getElementById('roomId');
-        const playerNameInput = document.getElementById('playerName');
-        const roomInfo = document.getElementById('roomInfo');
-        const currentRoomIdSpan = document.getElementById('currentRoomId');
-        const playerCountSpan = document.getElementById('playerCount');
-        const playerListDiv = document.getElementById('playerList');
+        
+        // Performance settings
+        let qualitySettings = {
+            high: {
+                antialias: true,
+                objectCount: 20,
+                objectDetail: 16,
+                drawDistance: 1000,
+                shadowsEnabled: true
+            },
+            medium: {
+                antialias: true,
+                objectCount: 10,
+                objectDetail: 8,
+                drawDistance: 500,
+                shadowsEnabled: false
+            },
+            low: {
+                antialias: false,
+                objectCount: 5,
+                objectDetail: 6,
+                drawDistance: 300,
+                shadowsEnabled: false
+            }
+        };
+        let currentQuality = 'medium';
+        let worldObjects = [];
 
         // Initialize the game
         function init() {
@@ -98,10 +126,18 @@
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.y = 1.6; // Average eye height
             
-            // Create renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+            // Get quality selector
+            const qualitySelect = document.getElementById('qualitySelect');
+            qualitySelect.addEventListener('change', function() {
+                currentQuality = this.value;
+                updateQuality();
+            });
+            
+            // Set initial quality from select element
+            currentQuality = qualitySelect.value;
+            
+            // Create renderer with quality settings
+            updateRenderer();
             
             // Setup FPS counter
             fpsCounter = document.getElementById('fpsCounter');
@@ -114,31 +150,8 @@
             directionalLight.position.set(1, 1, 1);
             scene.add(directionalLight);
             
-            // Create ground
-            const groundGeometry = new THREE.PlaneGeometry(100, 100);
-            const groundMaterial = new THREE.MeshStandardMaterial({ 
-                color: 0x2e8b57,  // Sea green
-                side: THREE.DoubleSide
-            });
-            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-            ground.rotation.x = -Math.PI / 2;
-            scene.add(ground);
-            
-            // Add some objects to the scene
-            for (let i = 0; i < 20; i++) {
-                const geometry = new THREE.BoxGeometry(1, 1, 1);
-                const material = new THREE.MeshStandardMaterial({ 
-                    color: Math.random() * 0xffffff 
-                });
-                const cube = new THREE.Mesh(geometry, material);
-                
-                // Random position
-                cube.position.x = (Math.random() - 0.5) * 50;
-                cube.position.z = (Math.random() - 0.5) * 50;
-                cube.position.y = 0.5;
-                
-                scene.add(cube);
-            }
+            // Create world objects based on quality settings
+            createWorld();
             
             // Create local player (just a colored sphere)
             createLocalPlayer();
@@ -160,14 +173,140 @@
             animate();
         }
         
+        function updateRenderer() {
+            // Remove old renderer if it exists
+            if (renderer && renderer.domElement) {
+                document.body.removeChild(renderer.domElement);
+            }
+            
+            // Create new renderer with current quality settings
+            const settings = qualitySettings[currentQuality];
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: settings.antialias,
+                precision: currentQuality === 'low' ? 'lowp' : 'mediump',
+                powerPreference: 'high-performance'
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(currentQuality === 'low' ? 0.8 : window.devicePixelRatio);
+            
+            // Update camera far plane
+            camera.far = settings.drawDistance;
+            camera.updateProjectionMatrix();
+            
+            document.body.appendChild(renderer.domElement);
+            
+            // Re-add pointer lock event listener to the new renderer
+            renderer.domElement.addEventListener('click', () => {
+                renderer.domElement.requestPointerLock();
+            });
+        }
+        
+        function updateQuality() {
+            updateRenderer();
+            
+            // Clear existing world objects
+            worldObjects.forEach(obj => scene.remove(obj));
+            worldObjects = [];
+            
+            // Recreate world with new settings
+            createWorld();
+        }
+        
+        function createWorld() {
+            const settings = qualitySettings[currentQuality];
+            
+            // Create ground
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x2e8b57,  // Sea green
+                side: THREE.DoubleSide,
+                flatShading: currentQuality === 'low'
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            
+            if (settings.shadowsEnabled) {
+                ground.receiveShadow = true;
+            }
+            
+            scene.add(ground);
+            worldObjects.push(ground);
+            
+            // Add random objects based on quality setting
+            for (let i = 0; i < settings.objectCount; i++) {
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: Math.random() * 0xffffff,
+                    flatShading: currentQuality === 'low'
+                });
+                const cube = new THREE.Mesh(geometry, material);
+                
+                // Random position
+                cube.position.x = (Math.random() - 0.5) * 50;
+                cube.position.z = (Math.random() - 0.5) * 50;
+                cube.position.y = 0.5;
+                
+                if (settings.shadowsEnabled) {
+                    cube.castShadow = true;
+                    cube.receiveShadow = true;
+                }
+                
+                scene.add(cube);
+                worldObjects.push(cube);
+            }
+            
+            // Recreate local player if it exists
+            if (localPlayer) {
+                scene.remove(localPlayer);
+                createLocalPlayer();
+            }
+            
+            // Recreate remote players if they exist
+            Object.keys(players).forEach(id => {
+                const pos = players[id].position.clone();
+                const rot = players[id].rotation.clone();
+                const name = players[id].userData?.name || "Player";
+                
+                scene.remove(players[id]);
+                
+                // Recreate player
+                const playerDetail = Math.max(6, settings.objectDetail);
+                const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
+                const colorIndex = Object.keys(players).indexOf(id) % playerColors.length + 1;
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: playerColors[colorIndex],
+                    flatShading: currentQuality === 'low'
+                });
+                
+                const playerMesh = new THREE.Mesh(geometry, material);
+                playerMesh.position.copy(pos);
+                playerMesh.rotation.copy(rot);
+                playerMesh.userData = { name: name };
+                
+                scene.add(playerMesh);
+                players[id] = playerMesh;
+                
+                // Create player label
+                createPlayerLabel(playerMesh, name);
+            });
+        }
+        
         // Create local player
         function createLocalPlayer() {
-            const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const settings = qualitySettings[currentQuality];
+            const playerDetail = Math.max(6, settings.objectDetail);
+            const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
             const material = new THREE.MeshStandardMaterial({ 
-                color: playerColors[0]
+                color: playerColors[0],
+                flatShading: currentQuality === 'low'
             });
             localPlayer = new THREE.Mesh(geometry, material);
             localPlayer.position.y = 0.5;
+            
+            if (settings.shadowsEnabled) {
+                localPlayer.castShadow = true;
+            }
+            
             scene.add(localPlayer);
             
             // Create a label for the player name
@@ -259,38 +398,43 @@
         function animate() {
             requestAnimationFrame(animate);
             
-            // Calculate delta time for smooth movement
-            const time = performance.now() * 0.001; // seconds
+            // Calculate time delta for consistent movement
+            const currentTime = performance.now() * 0.001; // seconds
+            const deltaTime = Math.min(0.1, currentTime - (lastTime || currentTime)); // Cap delta at 0.1 seconds
+            lastTime = currentTime;
+            
+            // Throttle updates for low-end devices
+            if (currentQuality === 'low') {
+                if (frameCount % 2 !== 0) { // Skip every other frame for low quality
+                    frameCount++;
+                    return;
+                }
+            }
             
             // Update FPS counter
             frameCount++;
-            if (time - lastFpsUpdate >= 1.0) { // Update every second
+            if (currentTime - lastFpsUpdate >= 1.0) { // Update every second
                 fpsCounter.textContent = `FPS: ${frameCount}`;
                 frameCount = 0;
-                lastFpsUpdate = time;
+                lastFpsUpdate = currentTime;
             }
             
-            // Move the player
-            const delta = 0.016; // Assume 60fps
-            const speed = 5.0;
+            // Move the player with consistent speed regardless of framerate
+            const speed = 5.0; // Units per second
             
             velocity.x = 0;
             velocity.z = 0;
             
             direction.z = Number(moveBackward) - Number(moveForward);
             direction.x = Number(moveRight) - Number(moveLeft);
-            direction.normalize();
             
-            if (moveForward || moveBackward) {
-                velocity.z = direction.z * speed * delta;
-            }
-            
-            if (moveLeft || moveRight) {
-                velocity.x = direction.x * speed * delta;
-            }
-            
-            // Apply rotation to movement direction
-            if (velocity.x !== 0 || velocity.z !== 0) {
+            if (direction.x !== 0 || direction.z !== 0) {
+                direction.normalize();
+                
+                velocity.z = direction.z * speed * deltaTime;
+                velocity.x = direction.x * speed * deltaTime;
+                
+                // Apply rotation to movement direction
                 const movementVector = new THREE.Vector3(velocity.x, 0, velocity.z);
                 movementVector.applyQuaternion(localPlayer.quaternion);
                 
@@ -553,10 +697,13 @@
             }
             
             // Create new player mesh
-            const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const settings = qualitySettings[currentQuality];
+            const playerDetail = Math.max(6, settings.objectDetail);
+            const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
             const colorIndex = Object.keys(players).length % playerColors.length + 1;
             const material = new THREE.MeshStandardMaterial({ 
-                color: playerColors[colorIndex] 
+                color: playerColors[colorIndex],
+                flatShading: currentQuality === 'low'
             });
             const playerMesh = new THREE.Mesh(geometry, material);
             playerMesh.position.set(
@@ -565,6 +712,11 @@
                 data.position.z
             );
             playerMesh.rotation.y = data.rotation.y;
+            playerMesh.userData = { name: data.name };
+            
+            if (settings.shadowsEnabled) {
+                playerMesh.castShadow = true;
+            }
             
             scene.add(playerMesh);
             players[data.id] = playerMesh;
@@ -645,6 +797,15 @@
         }
         
         // Set up button event listeners
+        const hostButton = document.getElementById('hostGame');
+        const joinButton = document.getElementById('joinGame');
+        const roomIdInput = document.getElementById('roomId');
+        const playerNameInput = document.getElementById('playerName');
+        const roomInfo = document.getElementById('roomInfo');
+        const currentRoomIdSpan = document.getElementById('currentRoomId');
+        const playerCountSpan = document.getElementById('playerCount');
+        const playerListDiv = document.getElementById('playerList');
+        
         hostButton.addEventListener('click', hostGame);
         joinButton.addEventListener('click', joinGame);
         
