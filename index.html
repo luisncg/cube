@@ -52,7 +52,7 @@
         </div>
         <div id="playerList"></div>
         <div id="controls" style="margin-top: 10px;">
-            <p>Controls: WASD to move, Mouse to look around</p>
+            <p>Controls: WASD to move, Space to jump, Mouse to look around</p>
         </div>
         <div style="margin-top: 10px;">
             <label for="qualitySelect">Graphics Quality:</label>
@@ -74,12 +74,18 @@
         let camera, scene, renderer;
         let localPlayer, players = {};
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let jumping = false, canJump = true;
         let velocity = new THREE.Vector3();
         let direction = new THREE.Vector3();
         let peer, connections = [];
         let playerId, roomId;
         let playerName = "";
         let playerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+        
+        // Physics parameters
+        const gravity = 9.8;
+        const jumpForce = 5.0;
+        const groundLevel = 0.5; // Player's y position when on ground
         
         // Time tracking for frame-independent movement
         let lastTime = null;
@@ -365,6 +371,13 @@
                 case 'KeyA': moveLeft = true; break;
                 case 'KeyS': moveBackward = true; break;
                 case 'KeyD': moveRight = true; break;
+                case 'Space': 
+                    if (canJump) {
+                        jumping = true;
+                        canJump = false;
+                        velocity.y = jumpForce;
+                    }
+                    break;
             }
         }
         
@@ -374,6 +387,7 @@
                 case 'KeyA': moveLeft = false; break;
                 case 'KeyS': moveBackward = false; break;
                 case 'KeyD': moveRight = false; break;
+                case 'Space': jumping = false; break;
             }
         }
         
@@ -426,7 +440,36 @@
                 lastFpsUpdate = currentTime;
             }
             
-            // Process player movement
+            // Process player movement and physics
+            updatePlayerPhysics(deltaTime);
+            
+            // Only skip rendering on low quality, not movement calculations
+            if (currentQuality === 'low' && frameCount % 2 === 0) {
+                return;
+            }
+            
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+        
+        // Process movement and physics with consistent speed
+        function updatePlayerPhysics(deltaTime) {
+            if (!localPlayer) return;
+            
+            // Apply gravity
+            if (localPlayer.position.y > groundLevel || velocity.y > 0) {
+                velocity.y -= gravity * deltaTime;
+                localPlayer.position.y += velocity.y * deltaTime;
+                
+                // Check for ground collision
+                if (localPlayer.position.y <= groundLevel && velocity.y < 0) {
+                    localPlayer.position.y = groundLevel;
+                    velocity.y = 0;
+                    canJump = true;
+                }
+            }
+            
+            // Horizontal movement (only allow when on or near ground)
             if (moveForward || moveBackward || moveLeft || moveRight) {
                 // Fixed movement speed (units per second)
                 const speed = 5.0;
@@ -459,19 +502,11 @@
                     
                     // Send position to peers
                     sendPositionUpdate();
-                    
-                    // Update camera after moving
-                    updateCameraPosition();
                 }
             }
             
-            // Only skip rendering on low quality, not movement calculations
-            if (currentQuality === 'low' && frameCount % 2 === 0) {
-                return;
-            }
-            
-            // Render the scene
-            renderer.render(scene, camera);
+            // Always update camera position if player has moved in any way
+            updateCameraPosition();
         }
         
         // P2P Connection Setup
