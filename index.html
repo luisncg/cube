@@ -156,9 +156,9 @@
             },
             medium: {
                 antialias: true,
-                objectCount: 3,         // Reduced from 10
+                objectCount: 2,         // Reduced from 10
                 objectDetail: 3,         // Reduced from 8
-                drawDistance: 60,       // Reduced from 500
+                drawDistance: 55,       // Reduced from 500
                 shadowsEnabled: false,
                 pixelRatio: 0.93          // Added pixel ratio scaling
             },
@@ -343,7 +343,7 @@
                     color: Math.random() * 0xffffff,
                     flatShading: currentQuality !== 'high',
                     // Optimize materials for medium quality
-                    roughness: currentQuality === 'medium' ? 0.8 : 0.5,
+                    roughness: currentQuality === 'medium' ? 0.4 : 0.5,
                     metalness: currentQuality === 'medium' ? 0.2 : 0.5
                 });
                 const cube = new THREE.Mesh(geometry, material);
