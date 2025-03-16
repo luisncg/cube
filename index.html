@@ -17,6 +17,17 @@
             padding: 10px;
             border-radius: 5px;
         }
+        #fpsCounter {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
         button {
             padding: 8px 16px;
             margin: 5px;
@@ -44,6 +55,8 @@
             <p>Controls: WASD to move, Mouse to look around</p>
         </div>
     </div>
+    
+    <div id="fpsCounter">FPS: 0</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
@@ -59,6 +72,11 @@
         let playerId, roomId;
         let playerName = "";
         let playerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+        
+        // FPS counter variables
+        let fpsCounter;
+        let frameCount = 0;
+        let lastFpsUpdate = 0;
 
         // DOM elements
         const hostButton = document.getElementById('hostGame');
@@ -84,6 +102,9 @@
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
+            
+            // Setup FPS counter
+            fpsCounter = document.getElementById('fpsCounter');
             
             // Add lighting
             const ambientLight = new THREE.AmbientLight(0x404040);
@@ -240,6 +261,14 @@
             
             // Calculate delta time for smooth movement
             const time = performance.now() * 0.001; // seconds
+            
+            // Update FPS counter
+            frameCount++;
+            if (time - lastFpsUpdate >= 1.0) { // Update every second
+                fpsCounter.textContent = `FPS: ${frameCount}`;
+                frameCount = 0;
+                lastFpsUpdate = time;
+            }
             
             // Move the player
             const delta = 0.016; // Assume 60fps
