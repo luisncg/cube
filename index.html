@@ -142,18 +142,10 @@
             // Setup FPS counter
             fpsCounter = document.getElementById('fpsCounter');
             
-            // Add lighting
-            const ambientLight = new THREE.AmbientLight(0x404040);
-            scene.add(ambientLight);
-            
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
-            
             // Create world objects based on quality settings
             createWorld();
             
-            // Create local player (just a colored sphere)
+            // Create local player
             createLocalPlayer();
             
             // Set up controls
@@ -170,6 +162,7 @@
             window.addEventListener('resize', onWindowResize);
             
             // Start animation loop
+            lastTime = performance.now() * 0.001;
             animate();
         }
         
@@ -210,10 +203,32 @@
             
             // Recreate world with new settings
             createWorld();
+            
+            // If the local player exists, recreate it
+            if (localPlayer) {
+                scene.remove(localPlayer);
+                createLocalPlayer();
+            }
         }
         
         function createWorld() {
             const settings = qualitySettings[currentQuality];
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            
+            if (settings.shadowsEnabled) {
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 1024;
+                directionalLight.shadow.mapSize.height = 1024;
+                renderer.shadowMap.enabled = true;
+            }
+            
+            scene.add(directionalLight);
             
             // Create ground
             const groundGeometry = new THREE.PlaneGeometry(100, 100);
@@ -255,39 +270,39 @@
                 worldObjects.push(cube);
             }
             
-            // Recreate local player if it exists
-            if (localPlayer) {
-                scene.remove(localPlayer);
-                createLocalPlayer();
-            }
-            
             // Recreate remote players if they exist
             Object.keys(players).forEach(id => {
-                const pos = players[id].position.clone();
-                const rot = players[id].rotation.clone();
-                const name = players[id].userData?.name || "Player";
+                if (!players[id]) return;
                 
-                scene.remove(players[id]);
-                
-                // Recreate player
-                const playerDetail = Math.max(6, settings.objectDetail);
-                const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
-                const colorIndex = Object.keys(players).indexOf(id) % playerColors.length + 1;
-                const material = new THREE.MeshStandardMaterial({ 
-                    color: playerColors[colorIndex],
-                    flatShading: currentQuality === 'low'
-                });
-                
-                const playerMesh = new THREE.Mesh(geometry, material);
-                playerMesh.position.copy(pos);
-                playerMesh.rotation.copy(rot);
-                playerMesh.userData = { name: name };
-                
-                scene.add(playerMesh);
-                players[id] = playerMesh;
-                
-                // Create player label
-                createPlayerLabel(playerMesh, name);
+                try {
+                    const pos = players[id].position.clone();
+                    const rot = players[id].rotation.clone();
+                    const name = players[id].userData?.name || "Player";
+                    
+                    scene.remove(players[id]);
+                    
+                    // Recreate player
+                    const playerDetail = Math.max(6, settings.objectDetail);
+                    const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
+                    const colorIndex = Object.keys(players).indexOf(id) % playerColors.length + 1;
+                    const material = new THREE.MeshStandardMaterial({ 
+                        color: playerColors[colorIndex],
+                        flatShading: currentQuality === 'low'
+                    });
+                    
+                    const playerMesh = new THREE.Mesh(geometry, material);
+                    playerMesh.position.copy(pos);
+                    playerMesh.rotation.copy(rot);
+                    playerMesh.userData = { name: name };
+                    
+                    scene.add(playerMesh);
+                    players[id] = playerMesh;
+                    
+                    // Create player label
+                    createPlayerLabel(playerMesh, name);
+                } catch (e) {
+                    console.error("Error recreating player:", e);
+                }
             });
         }
         
@@ -379,6 +394,8 @@
         
         // Update camera position relative to player
         function updateCameraPosition() {
+            if (!localPlayer) return;
+            
             // Position camera right behind the player
             const offset = new THREE.Vector3(0, 1.6, 2);
             offset.applyQuaternion(localPlayer.quaternion);
@@ -400,16 +417,8 @@
             
             // Calculate time delta for consistent movement
             const currentTime = performance.now() * 0.001; // seconds
-            const deltaTime = Math.min(0.1, currentTime - (lastTime || currentTime)); // Cap delta at 0.1 seconds
+            const deltaTime = Math.min(0.1, currentTime - lastTime); // Cap delta at 0.1 seconds
             lastTime = currentTime;
-            
-            // Throttle updates for low-end devices
-            if (currentQuality === 'low') {
-                if (frameCount % 2 !== 0) { // Skip every other frame for low quality
-                    frameCount++;
-                    return;
-                }
-            }
             
             // Update FPS counter
             frameCount++;
@@ -419,33 +428,49 @@
                 lastFpsUpdate = currentTime;
             }
             
-            // Move the player with consistent speed regardless of framerate
-            const speed = 5.0; // Units per second
-            
-            velocity.x = 0;
-            velocity.z = 0;
-            
-            direction.z = Number(moveBackward) - Number(moveForward);
-            direction.x = Number(moveRight) - Number(moveLeft);
-            
-            if (direction.x !== 0 || direction.z !== 0) {
-                direction.normalize();
+            // Process player movement
+            if (moveForward || moveBackward || moveLeft || moveRight) {
+                // Fixed movement speed (units per second)
+                const speed = 5.0;
                 
-                velocity.z = direction.z * speed * deltaTime;
-                velocity.x = direction.x * speed * deltaTime;
+                // Calculate movement direction
+                direction.x = 0;
+                direction.z = 0;
                 
-                // Apply rotation to movement direction
-                const movementVector = new THREE.Vector3(velocity.x, 0, velocity.z);
-                movementVector.applyQuaternion(localPlayer.quaternion);
+                if (moveForward) direction.z -= 1;
+                if (moveBackward) direction.z += 1;
+                if (moveLeft) direction.x -= 1;
+                if (moveRight) direction.x += 1;
                 
-                localPlayer.position.add(movementVector);
-                
-                // Send position update to peers
-                sendPositionUpdate();
+                if (direction.x !== 0 || direction.z !== 0) {
+                    // Normalize the direction vector
+                    direction.normalize();
+                    
+                    // Calculate movement with delta time
+                    const movementVector = new THREE.Vector3(
+                        direction.x * speed * deltaTime,
+                        0,
+                        direction.z * speed * deltaTime
+                    );
+                    
+                    // Apply player's rotation to movement
+                    movementVector.applyQuaternion(localPlayer.quaternion);
+                    
+                    // Update player position
+                    localPlayer.position.add(movementVector);
+                    
+                    // Send position to peers
+                    sendPositionUpdate();
+                    
+                    // Update camera after moving
+                    updateCameraPosition();
+                }
             }
             
-            // Update camera position
-            updateCameraPosition();
+            // Only skip rendering on low quality, not movement calculations
+            if (currentQuality === 'low' && frameCount % 2 === 0) {
+                return;
+            }
             
             // Render the scene
             renderer.render(scene, camera);
