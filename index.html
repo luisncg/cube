@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple P2P Multiplayer Game</title>
+    <title>online</title>
     <style>
         body { margin: 0; overflow: hidden; }
         canvas { display: block; }
@@ -27,6 +27,39 @@
             padding: 5px 10px;
             border-radius: 5px;
             font-size: 14px;
+        }
+        #chatContainer {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 300px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #chatMessages {
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px 5px 0 0;
+            height: 150px;
+            overflow-y: auto;
+            margin-bottom: 5px;
+        }
+        #chatInput {
+            width: 100%;
+            padding: 8px;
+            border: none;
+            border-radius: 0 0 5px 5px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            box-sizing: border-box;
+        }
+        .chatMessage {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+        .systemMessage {
+            color: #ffcc00;
+            font-style: italic;
         }
         button {
             padding: 8px 16px;
@@ -52,7 +85,7 @@
         </div>
         <div id="playerList"></div>
         <div id="controls" style="margin-top: 10px;">
-            <p>Controls: WASD to move, Space to jump, Mouse to look around</p>
+            <p>Controls: WASD to move, Space to jump, Mouse to look around, Enter to chat</p>
         </div>
         <div style="margin-top: 10px;">
             <label for="qualitySelect">Graphics Quality:</label>
@@ -65,6 +98,11 @@
     </div>
     
     <div id="fpsCounter">FPS: 0</div>
+
+    <div id="chatContainer">
+        <div id="chatMessages"></div>
+        <input id="chatInput" type="text" placeholder="Press Enter to chat..." maxlength="100">
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
@@ -81,6 +119,11 @@
         let playerId, roomId;
         let playerName = "";
         let playerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+        
+        // Chat variables
+        let chatActive = false;
+        let chatMessages = [];
+        let maxChatMessages = 50;
         
         // Physics parameters
         const gravity = 9.8;
@@ -148,6 +191,9 @@
             // Setup FPS counter
             fpsCounter = document.getElementById('fpsCounter');
             
+            // Set up chat
+            setupChat();
+            
             // Create world objects based on quality settings
             createWorld();
             
@@ -161,7 +207,9 @@
             
             // Lock pointer for mouse controls
             renderer.domElement.addEventListener('click', () => {
-                renderer.domElement.requestPointerLock();
+                if (!chatActive) {
+                    renderer.domElement.requestPointerLock();
+                }
             });
             
             // Handle window resize
@@ -196,7 +244,9 @@
             
             // Re-add pointer lock event listener to the new renderer
             renderer.domElement.addEventListener('click', () => {
-                renderer.domElement.requestPointerLock();
+                if (!chatActive) {
+                    renderer.domElement.requestPointerLock();
+                }
             });
         }
         
@@ -366,6 +416,19 @@
         
         // Handle keyboard input
         function onKeyDown(event) {
+            // Ignore movement keys when chat is active
+            if (chatActive && (event.code === 'KeyW' || event.code === 'KeyA' || 
+                               event.code === 'KeyS' || event.code === 'KeyD' || 
+                               event.code === 'Space')) {
+                return;
+            }
+            
+            // Toggle chat with Enter key
+            if (event.code === 'Enter') {
+                toggleChat();
+                return;
+            }
+            
             switch (event.code) {
                 case 'KeyW': moveForward = true; break;
                 case 'KeyA': moveLeft = true; break;
@@ -509,6 +572,132 @@
             updateCameraPosition();
         }
         
+        // Set up chat functions
+        function setupChat() {
+            // Get chat elements
+            const chatInput = document.getElementById('chatInput');
+            
+            // Setup chat input handling
+            chatInput.addEventListener('keydown', function(event) {
+                // Prevent default only for Enter key
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    
+                    const message = chatInput.value.trim();
+                    if (message) {
+                        // Send message to all peers
+                        sendChatMessage(message);
+                        
+                        // Add message to local chat
+                        addChatMessage(playerName || 'You', message);
+                        
+                        // Clear input
+                        chatInput.value = '';
+                    }
+                    
+                    // Close chat mode
+                    toggleChat(false);
+                }
+                
+                // Stop propagation to prevent movement keys from triggering
+                event.stopPropagation();
+            });
+            
+            // Initial system message
+            addSystemMessage('Welcome to the game!');
+        }
+        
+        function toggleChat(forcedState) {
+            chatActive = forcedState !== undefined ? forcedState : !chatActive;
+            
+            const chatInput = document.getElementById('chatInput');
+            
+            if (chatActive) {
+                // Focus chat input
+                chatInput.focus();
+                
+                // Release pointer lock for typing
+                document.exitPointerLock();
+            } else {
+                // Blur input to stop receiving keystrokes
+                chatInput.blur();
+            }
+        }
+        
+        function addChatMessage(sender, message) {
+            const chatMessagesDiv = document.getElementById('chatMessages');
+            
+            // Create message element
+            const messageElement = document.createElement('div');
+            messageElement.className = 'chatMessage';
+            messageElement.textContent = `${sender}: ${message}`;
+            
+            // Add to DOM
+            chatMessagesDiv.appendChild(messageElement);
+            
+            // Limit number of messages
+            limitChatMessages();
+            
+            // Scroll to bottom
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+            
+            // Store in message history
+            chatMessages.push({
+                sender: sender,
+                message: message,
+                system: false
+            });
+        }
+        
+        function addSystemMessage(message) {
+            const chatMessagesDiv = document.getElementById('chatMessages');
+            
+            // Create message element
+            const messageElement = document.createElement('div');
+            messageElement.className = 'chatMessage systemMessage';
+            messageElement.textContent = message;
+            
+            // Add to DOM
+            chatMessagesDiv.appendChild(messageElement);
+            
+            // Limit number of messages
+            limitChatMessages();
+            
+            // Scroll to bottom
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+            
+            // Store in message history
+            chatMessages.push({
+                message: message,
+                system: true
+            });
+        }
+        
+        function limitChatMessages() {
+            const chatMessagesDiv = document.getElementById('chatMessages');
+            
+            // Remove old messages if too many
+            while (chatMessagesDiv.children.length > maxChatMessages) {
+                chatMessagesDiv.removeChild(chatMessagesDiv.firstChild);
+            }
+        }
+        
+        function sendChatMessage(message) {
+            if (!connections.length) return;
+            
+            const chatData = {
+                type: 'chat-message',
+                playerName: playerName || 'Player',
+                message: message
+            };
+            
+            connections.forEach(conn => {
+                if (conn.open) {
+                    conn.send(chatData);
+                }
+            });
+        }
+        
         // P2P Connection Setup
         function setupPeerConnection() {
             // Generate a simple random ID (no prefix needed)
@@ -581,6 +770,9 @@
                 
                 console.log('Game hosted! Room ID:', roomId);
                 alert('Game created! Share this Room ID with others: ' + roomId);
+                
+                // Add system message
+                addSystemMessage('Game created! Your Room ID is: ' + roomId);
             });
         }
         
@@ -609,7 +801,8 @@
                 
                 // Connect to host (assume host's peer ID is the same as room ID for simplicity)
                 const conn = peer.connect(roomToJoin, {
-                    reliable: true
+                    reliable: true,
+                    metadata: { playerName: playerName }
                 });
                 
                 conn.on('error', (err) => {
@@ -674,6 +867,10 @@
                 
                 // Update player count
                 updatePlayerCount();
+                
+                // Add system message about connection
+                let peerName = conn.metadata?.playerName || "A new player";
+                addSystemMessage(`${peerName} has joined the game.`);
             });
             
             conn.on('data', (data) => {
@@ -682,6 +879,12 @@
             
             conn.on('close', () => {
                 console.log('Connection closed to peer: ' + conn.peer);
+                
+                // Get player name before removing
+                let peerName = "A player";
+                if (players[conn.peer] && players[conn.peer].userData) {
+                    peerName = players[conn.peer].userData.name || "A player";
+                }
                 
                 // Remove player from scene
                 if (players[conn.peer]) {
@@ -700,6 +903,9 @@
                 if (playerElement) {
                     playerElement.remove();
                 }
+                
+                // Add system message about disconnection
+                addSystemMessage(`${peerName} has left the game.`);
             });
         }
         
@@ -723,6 +929,11 @@
                     }
                     break;
                     
+                case 'chat-message':
+                    // Display chat message from another player
+                    addChatMessage(data.playerName, data.message);
+                    break;
+                    
                 case 'room-info':
                     // Store room info
                     roomId = data.roomId;
@@ -737,6 +948,9 @@
                             updatePlayerList(player);
                         });
                     }
+                    
+                    // Add system message
+                    addSystemMessage('Joined room ' + roomId);
                     break;
             }
         }
@@ -862,6 +1076,8 @@
         const currentRoomIdSpan = document.getElementById('currentRoomId');
         const playerCountSpan = document.getElementById('playerCount');
         const playerListDiv = document.getElementById('playerList');
+        const chatMessagesDiv = document.getElementById('chatMessages');
+        const chatInputField = document.getElementById('chatInput');
         
         // Update player name label when typing in the name field
         playerNameInput.addEventListener('input', function() {
