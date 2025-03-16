@@ -1,53 +1,573 @@
-using Unity.Netcode;
-using UnityEngine;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple P2P Multiplayer Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #playerList {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>
+            <input id="playerName" type="text" placeholder="Your name" maxlength="10">
+            <button id="hostGame">Host Game</button>
+            <button id="joinGame">Join Game</button>
+            <input id="roomId" type="text" placeholder="Room ID to join" style="display:none;">
+        </div>
+        <div id="roomInfo" style="display:none;">
+            <p>Room ID: <span id="currentRoomId"></span></p>
+            <p>Connected players: <span id="playerCount">1</span></p>
+        </div>
+        <div id="playerList"></div>
+        <div id="controls" style="margin-top: 10px;">
+            <p>Controls: WASD to move, Mouse to look around</p>
+        </div>
+    </div>
 
-public class TestModeInitializer : MonoBehaviour
-{
-    public bool autoStartHostInEditor = true;
-    public GameObject playerPrefab; // Add this field to assign your player prefab
-    
-    void Start()
-    {
-        // Only auto-start when playing directly in the editor
-        if (autoStartHostInEditor && Application.isEditor)
-        {
-            Debug.Log("Test mode: Auto-starting as host");
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
+
+    <script>
+        // Main game variables
+        let camera, scene, renderer;
+        let localPlayer, players = {};
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let peer, connections = [];
+        let playerId, roomId;
+        let playerName = "";
+        let playerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+
+        // DOM elements
+        const hostButton = document.getElementById('hostGame');
+        const joinButton = document.getElementById('joinGame');
+        const roomIdInput = document.getElementById('roomId');
+        const playerNameInput = document.getElementById('playerName');
+        const roomInfo = document.getElementById('roomInfo');
+        const currentRoomIdSpan = document.getElementById('currentRoomId');
+        const playerCountSpan = document.getElementById('playerCount');
+        const playerListDiv = document.getElementById('playerList');
+
+        // Initialize the game
+        function init() {
+            // Set up Three.js scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb); // Sky blue background
             
-            // Check if we're not already connected
-            if (NetworkManager.Singleton != null && 
-                !NetworkManager.Singleton.IsClient && 
-                !NetworkManager.Singleton.IsHost && 
-                !NetworkManager.Singleton.IsServer)
-            {
-                // Start host
-                NetworkManager.Singleton.StartHost();
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 1.6; // Average eye height
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            // Create ground
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x2e8b57,  // Sea green
+                side: THREE.DoubleSide
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
+            
+            // Add some objects to the scene
+            for (let i = 0; i < 20; i++) {
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: Math.random() * 0xffffff 
+                });
+                const cube = new THREE.Mesh(geometry, material);
                 
-                // Give a short delay to ensure everything is initialized
-                Invoke("LockCursorAndFixPosition", 0.5f);
+                // Random position
+                cube.position.x = (Math.random() - 0.5) * 50;
+                cube.position.z = (Math.random() - 0.5) * 50;
+                cube.position.y = 0.5;
+                
+                scene.add(cube);
             }
+            
+            // Create local player (just a colored sphere)
+            createLocalPlayer();
+            
+            // Set up controls
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('mousemove', onMouseMove);
+            
+            // Lock pointer for mouse controls
+            renderer.domElement.addEventListener('click', () => {
+                renderer.domElement.requestPointerLock();
+            });
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start animation loop
+            animate();
         }
-    }
-    
-    void LockCursorAndFixPosition()
-    {
-        // Lock cursor
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
-        Debug.Log("Cursor locked by TestModeInitializer");
         
-        // Find the player and adjust height if needed
-        GameObject player = GameObject.FindWithTag("Player");
-        if (player != null)
-        {
-            // Check if player is too close to ground
-            if (player.transform.position.y < 0.5f)
-            {
-                // Raise the player to prevent falling through
-                Vector3 pos = player.transform.position;
-                pos.y = 1.0f;
-                player.transform.position = pos;
-                Debug.Log("Adjusted player position to prevent falling");
+        // Create local player
+        function createLocalPlayer() {
+            const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: playerColors[0]
+            });
+            localPlayer = new THREE.Mesh(geometry, material);
+            localPlayer.position.y = 0.5;
+            scene.add(localPlayer);
+            
+            // Create a label for the player name
+            createPlayerLabel(localPlayer, playerName || "You");
+        }
+        
+        // Create a text label for a player
+        function createPlayerLabel(playerMesh, name) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            
+            context.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            context.font = '24px Arial';
+            context.textAlign = 'center';
+            context.fillStyle = 'white';
+            context.fillText(name, canvas.width / 2, canvas.height / 2 + 8);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(material);
+            sprite.position.y = 1.2;
+            sprite.scale.set(2, 0.5, 1);
+            
+            playerMesh.add(sprite);
+            return sprite;
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Handle keyboard input
+        function onKeyDown(event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyD': moveRight = true; break;
             }
         }
-    }
-}
+        
+        function onKeyUp(event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyD': moveRight = false; break;
+            }
+        }
+        
+        // Handle mouse movement for camera rotation
+        function onMouseMove(event) {
+            if (document.pointerLockElement === renderer.domElement) {
+                // Rotate the player based on mouse movement
+                const movementX = event.movementX || 0;
+                
+                localPlayer.rotation.y -= movementX * 0.002;
+                
+                // Update camera position relative to player
+                updateCameraPosition();
+            }
+        }
+        
+        // Update camera position relative to player
+        function updateCameraPosition() {
+            // Position camera right behind the player
+            const offset = new THREE.Vector3(0, 1.6, 2);
+            offset.applyQuaternion(localPlayer.quaternion);
+            offset.add(localPlayer.position);
+            
+            camera.position.copy(offset);
+            
+            // Look at point slightly above player
+            const target = new THREE.Vector3(0, 0.5, -3);
+            target.applyQuaternion(localPlayer.quaternion);
+            target.add(localPlayer.position);
+            
+            camera.lookAt(target);
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Calculate delta time for smooth movement
+            const time = performance.now() * 0.001; // seconds
+            
+            // Move the player
+            const delta = 0.016; // Assume 60fps
+            const speed = 5.0;
+            
+            velocity.x = 0;
+            velocity.z = 0;
+            
+            direction.z = Number(moveBackward) - Number(moveForward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+            
+            if (moveForward || moveBackward) {
+                velocity.z = direction.z * speed * delta;
+            }
+            
+            if (moveLeft || moveRight) {
+                velocity.x = direction.x * speed * delta;
+            }
+            
+            // Apply rotation to movement direction
+            if (velocity.x !== 0 || velocity.z !== 0) {
+                const movementVector = new THREE.Vector3(velocity.x, 0, velocity.z);
+                movementVector.applyQuaternion(localPlayer.quaternion);
+                
+                localPlayer.position.add(movementVector);
+                
+                // Send position update to peers
+                sendPositionUpdate();
+            }
+            
+            // Update camera position
+            updateCameraPosition();
+            
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+        
+        // P2P Connection Setup
+        function setupPeerConnection() {
+            // Generate random ID for this player
+            playerId = 'player-' + Math.floor(Math.random() * 1000000);
+            
+            // Initialize PeerJS
+            peer = new Peer(playerId, {
+                debug: 2
+            });
+            
+            peer.on('open', (id) => {
+                console.log('My peer ID is: ' + id);
+                playerId = id;
+            });
+            
+            peer.on('connection', (conn) => {
+                handleConnection(conn);
+            });
+            
+            peer.on('error', (err) => {
+                console.error('PeerJS error:', err);
+                alert('Connection error: ' + err);
+            });
+        }
+        
+        // Host a new game
+        function hostGame() {
+            playerName = playerNameInput.value || "Host";
+            setupPeerConnection();
+            
+            // Generate a simple room ID
+            roomId = Math.floor(Math.random() * 1000000).toString();
+            
+            // Update UI
+            hostButton.disabled = true;
+            joinButton.disabled = true;
+            playerNameInput.disabled = true;
+            roomInfo.style.display = 'block';
+            currentRoomIdSpan.textContent = roomId;
+            
+            // Add host to player list
+            updatePlayerList({
+                id: playerId,
+                name: playerName,
+                host: true
+            });
+        }
+        
+        // Join an existing game
+        function joinGame() {
+            if (roomIdInput.style.display === 'none') {
+                roomIdInput.style.display = 'inline-block';
+                return;
+            }
+            
+            const roomToJoin = roomIdInput.value.trim();
+            if (!roomToJoin) {
+                alert('Please enter a room ID');
+                return;
+            }
+            
+            playerName = playerNameInput.value || "Player";
+            setupPeerConnection();
+            
+            // Connect to host (assume host's peer ID is the same as room ID for simplicity)
+            const conn = peer.connect(roomToJoin, {
+                reliable: true
+            });
+            
+            handleConnection(conn);
+            
+            // Update UI
+            hostButton.disabled = true;
+            joinButton.disabled = true;
+            roomIdInput.disabled = true;
+            playerNameInput.disabled = true;
+        }
+        
+        // Handle a new peer connection
+        function handleConnection(conn) {
+            // Store connection
+            connections.push(conn);
+            
+            conn.on('open', () => {
+                console.log('Connected to peer: ' + conn.peer);
+                
+                // Send player info to new peer
+                conn.send({
+                    type: 'player-info',
+                    id: playerId,
+                    name: playerName,
+                    position: {
+                        x: localPlayer.position.x,
+                        y: localPlayer.position.y,
+                        z: localPlayer.position.z
+                    },
+                    rotation: {
+                        y: localPlayer.rotation.y
+                    }
+                });
+                
+                // If we're the host, send the room ID and player list
+                if (roomId) {
+                    conn.send({
+                        type: 'room-info',
+                        roomId: roomId,
+                        players: getPlayerList()
+                    });
+                }
+                
+                // Update player count
+                updatePlayerCount();
+            });
+            
+            conn.on('data', (data) => {
+                handlePeerData(conn.peer, data);
+            });
+            
+            conn.on('close', () => {
+                console.log('Connection closed to peer: ' + conn.peer);
+                
+                // Remove player from scene
+                if (players[conn.peer]) {
+                    scene.remove(players[conn.peer]);
+                    delete players[conn.peer];
+                }
+                
+                // Remove connection
+                connections = connections.filter(c => c.peer !== conn.peer);
+                
+                // Update player count
+                updatePlayerCount();
+                
+                // Remove from player list
+                const playerElement = document.getElementById('player-' + conn.peer);
+                if (playerElement) {
+                    playerElement.remove();
+                }
+            });
+        }
+        
+        // Handle data received from peers
+        function handlePeerData(peerId, data) {
+            switch (data.type) {
+                case 'player-info':
+                    // Add or update player in the scene
+                    addOrUpdatePlayer(data);
+                    break;
+                    
+                case 'position-update':
+                    // Update player position
+                    if (players[peerId]) {
+                        players[peerId].position.set(
+                            data.position.x,
+                            data.position.y,
+                            data.position.z
+                        );
+                        players[peerId].rotation.y = data.rotation.y;
+                    }
+                    break;
+                    
+                case 'room-info':
+                    // Store room info
+                    roomId = data.roomId;
+                    
+                    // Update UI
+                    roomInfo.style.display = 'block';
+                    currentRoomIdSpan.textContent = roomId;
+                    
+                    // Update player list
+                    if (data.players) {
+                        data.players.forEach(player => {
+                            updatePlayerList(player);
+                        });
+                    }
+                    break;
+            }
+        }
+        
+        // Add or update a player in the scene
+        function addOrUpdatePlayer(data) {
+            // If player already exists, update position
+            if (players[data.id]) {
+                players[data.id].position.set(
+                    data.position.x,
+                    data.position.y,
+                    data.position.z
+                );
+                players[data.id].rotation.y = data.rotation.y;
+                return;
+            }
+            
+            // Create new player mesh
+            const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const colorIndex = Object.keys(players).length % playerColors.length + 1;
+            const material = new THREE.MeshStandardMaterial({ 
+                color: playerColors[colorIndex] 
+            });
+            const playerMesh = new THREE.Mesh(geometry, material);
+            playerMesh.position.set(
+                data.position.x,
+                data.position.y,
+                data.position.z
+            );
+            playerMesh.rotation.y = data.rotation.y;
+            
+            scene.add(playerMesh);
+            players[data.id] = playerMesh;
+            
+            // Create player label
+            createPlayerLabel(playerMesh, data.name);
+            
+            // Update player list UI
+            updatePlayerList({
+                id: data.id,
+                name: data.name
+            });
+        }
+        
+        // Send position update to all peers
+        function sendPositionUpdate() {
+            if (!connections.length) return;
+            
+            const update = {
+                type: 'position-update',
+                position: {
+                    x: localPlayer.position.x,
+                    y: localPlayer.position.y,
+                    z: localPlayer.position.z
+                },
+                rotation: {
+                    y: localPlayer.rotation.y
+                }
+            };
+            
+            connections.forEach(conn => {
+                if (conn.open) {
+                    conn.send(update);
+                }
+            });
+        }
+        
+        // Update player count UI
+        function updatePlayerCount() {
+            const count = 1 + Object.keys(players).length; // 1 for local player
+            playerCountSpan.textContent = count;
+        }
+        
+        // Get list of all players
+        function getPlayerList() {
+            const list = [{
+                id: playerId,
+                name: playerName,
+                host: !!roomId
+            }];
+            
+            connections.forEach(conn => {
+                const playerElement = document.getElementById('player-' + conn.peer);
+                if (playerElement) {
+                    const name = playerElement.textContent.split(': ')[1];
+                    list.push({
+                        id: conn.peer,
+                        name: name
+                    });
+                }
+            });
+            
+            return list;
+        }
+        
+        // Update player list UI
+        function updatePlayerList(player) {
+            // Check if player already exists in list
+            let playerElement = document.getElementById('player-' + player.id);
+            
+            if (!playerElement) {
+                playerElement = document.createElement('div');
+                playerElement.id = 'player-' + player.id;
+                playerListDiv.appendChild(playerElement);
+            }
+            
+            playerElement.textContent = (player.host ? '👑 ' : '') + 'Player: ' + player.name;
+        }
+        
+        // Set up button event listeners
+        hostButton.addEventListener('click', hostGame);
+        joinButton.addEventListener('click', joinGame);
+        
+        // Initialize the game when the page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
