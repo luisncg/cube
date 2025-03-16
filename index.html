@@ -94,6 +94,10 @@
                 <option value="medium" selected>Medium</option>
                 <option value="low">Low</option>
             </select>
+            <span style="margin-left: 15px;"></span>
+            <label for="sensitivitySlider">Mouse Sens:</label>
+            <input type="range" id="sensitivitySlider" min="1" max="10" value="5" style="vertical-align: middle;">
+            <span id="sensitivityValue">5</span>
         </div>
     </div>
     
@@ -119,6 +123,9 @@
         let playerId, roomId;
         let playerName = "";
         let playerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+        
+        // Mouse sensitivity
+        let mouseSensitivity = 0.002; // Default value
         
         // Chat variables
         let chatActive = false;
@@ -190,6 +197,24 @@
             
             // Setup FPS counter
             fpsCounter = document.getElementById('fpsCounter');
+            
+            // Setup mouse sensitivity slider
+            const sensitivitySlider = document.getElementById('sensitivitySlider');
+            const sensitivityValue = document.getElementById('sensitivityValue');
+            
+            sensitivitySlider.addEventListener('input', function() {
+                const value = parseInt(this.value);
+                sensitivityValue.textContent = value;
+                
+                // Convert slider value (1-10) to sensitivity with a wider range (0.0002-0.008)
+                // Using an exponential curve to make higher settings feel more impactful
+                const minSens = 0.0002;
+                const maxSens = 0.008;
+                // Exponential calculation gives more fine control at low values and more dramatic increases at high values
+                const power = 2.5; // Higher values make the curve steeper at the high end
+                const normalizedValue = (value - 1) / 9; // 0 to 1
+                mouseSensitivity = minSens + (maxSens - minSens) * Math.pow(normalizedValue, power);
+            });
             
             // Set up chat
             setupChat();
@@ -457,13 +482,23 @@
         // Handle mouse movement for camera rotation
         function onMouseMove(event) {
             if (document.pointerLockElement === renderer.domElement) {
-                // Rotate the player based on mouse movement
+                // Get mouse movement
                 const movementX = event.movementX || 0;
                 
-                localPlayer.rotation.y -= movementX * 0.002;
+                // Calculate rotation amount with fixed sensitivity
+                const rotationAmount = -movementX * mouseSensitivity;
                 
-                // Update camera position relative to player
-                updateCameraPosition();
+                // Limit maximum rotation per frame to prevent teleporting
+                const maxRotationPerFrame = 0.08;
+                const clampedRotation = Math.max(
+                    -maxRotationPerFrame, 
+                    Math.min(maxRotationPerFrame, rotationAmount)
+                );
+                
+                // Apply rotation to player
+                localPlayer.rotation.y += clampedRotation;
+                
+                // No need to update camera here - it's done in the animation loop
             }
         }
         
@@ -471,11 +506,12 @@
         function updateCameraPosition() {
             if (!localPlayer) return;
             
-            // Position camera right behind the player (increased distance from 2 to 4)
+            // Position camera right behind the player
             const offset = new THREE.Vector3(0, 2.5, 5);
             offset.applyQuaternion(localPlayer.quaternion);
             offset.add(localPlayer.position);
             
+            // Direct positioning - smoother with clamped rotation
             camera.position.copy(offset);
             
             // Look at point slightly above player
