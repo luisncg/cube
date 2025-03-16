@@ -283,9 +283,16 @@
             // Generate random ID for this player
             playerId = 'player-' + Math.floor(Math.random() * 1000000);
             
-            // Initialize PeerJS
+            // Initialize PeerJS with a reliable public server
             peer = new Peer(playerId, {
-                debug: 2
+                debug: 2,
+                config: {
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ]
+                }
             });
             
             peer.on('open', (id) => {
@@ -299,7 +306,22 @@
             
             peer.on('error', (err) => {
                 console.error('PeerJS error:', err);
-                alert('Connection error: ' + err);
+                
+                if (err.type === 'peer-unavailable') {
+                    alert('Could not connect to the specified room. Please check the Room ID and try again.');
+                } else if (err.type === 'network' || err.type === 'disconnected') {
+                    alert('Network error. Please check your internet connection and try again.');
+                } else if (err.type === 'server-error') {
+                    alert('PeerJS server error. Please try again later.');
+                } else {
+                    alert('Connection error: ' + err);
+                }
+                
+                // Reset UI on error to allow trying again
+                hostButton.disabled = false;
+                joinButton.disabled = false;
+                roomIdInput.disabled = false;
+                playerNameInput.disabled = false;
             });
         }
         
@@ -308,21 +330,26 @@
             playerName = playerNameInput.value || "Host";
             setupPeerConnection();
             
-            // Generate a simple room ID
-            roomId = Math.floor(Math.random() * 1000000).toString();
-            
-            // Update UI
-            hostButton.disabled = true;
-            joinButton.disabled = true;
-            playerNameInput.disabled = true;
-            roomInfo.style.display = 'block';
-            currentRoomIdSpan.textContent = roomId;
-            
-            // Add host to player list
-            updatePlayerList({
-                id: playerId,
-                name: playerName,
-                host: true
+            peer.on('open', (id) => {
+                // Use the actual peer ID as the room ID to ensure consistency
+                roomId = id;
+                
+                // Update UI
+                hostButton.disabled = true;
+                joinButton.disabled = true;
+                playerNameInput.disabled = true;
+                roomInfo.style.display = 'block';
+                currentRoomIdSpan.textContent = roomId;
+                
+                // Add host to player list
+                updatePlayerList({
+                    id: playerId,
+                    name: playerName,
+                    host: true
+                });
+                
+                console.log('Game hosted! Room ID:', roomId);
+                alert('Game created! Share this Room ID with others: ' + roomId);
             });
         }
         
@@ -342,18 +369,44 @@
             playerName = playerNameInput.value || "Player";
             setupPeerConnection();
             
-            // Connect to host (assume host's peer ID is the same as room ID for simplicity)
-            const conn = peer.connect(roomToJoin, {
-                reliable: true
+            // Set up a timeout to detect connection failures
+            let connectionTimeout;
+            
+            peer.on('open', (id) => {
+                // Only try to connect once peer is fully initialized
+                clearTimeout(connectionTimeout);
+                
+                // Connect to host (assume host's peer ID is the same as room ID for simplicity)
+                const conn = peer.connect(roomToJoin, {
+                    reliable: true
+                });
+                
+                conn.on('error', (err) => {
+                    console.error('Connection error:', err);
+                    alert('Failed to connect to room ' + roomToJoin + '. Make sure the room ID is correct and the host is online.');
+                });
+                
+                handleConnection(conn);
+                
+                // Update UI
+                hostButton.disabled = true;
+                joinButton.disabled = true;
+                roomIdInput.disabled = true;
+                playerNameInput.disabled = true;
+                
+                // Set a 10-second timeout for connection
+                connectionTimeout = setTimeout(() => {
+                    if (!conn.open) {
+                        alert('Connection timed out. Make sure the room ID is correct and try again.');
+                        
+                        // Reset UI to allow trying again
+                        hostButton.disabled = false;
+                        joinButton.disabled = false;
+                        roomIdInput.disabled = false;
+                        playerNameInput.disabled = false;
+                    }
+                }, 10000);
             });
-            
-            handleConnection(conn);
-            
-            // Update UI
-            hostButton.disabled = true;
-            joinButton.disabled = true;
-            roomIdInput.disabled = true;
-            playerNameInput.disabled = true;
         }
         
         // Handle a new peer connection
