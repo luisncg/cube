@@ -149,8 +149,8 @@
         let qualitySettings = {
             high: {
                 antialias: true,
-                objectCount: 10,
-                objectDetail: 11,
+                objectCount: 6,
+                objectDetail: 7,
                 drawDistance: 150,
                 shadowsEnabled: true
             },
@@ -343,8 +343,8 @@
                     color: Math.random() * 0xffffff,
                     flatShading: currentQuality !== 'high',
                     // Optimize materials for medium quality
-                    roughness: currentQuality === 'medium' ? 0.4 : 0.5,
-                    metalness: currentQuality === 'medium' ? 0.2 : 0.5
+                    roughness: currentQuality === 'medium' ? 0.1 : 0.5,
+                    metalness: currentQuality === 'medium' ? 0.1 : 0.5
                 });
                 const cube = new THREE.Mesh(geometry, material);
                 
