@@ -478,8 +478,8 @@
         
         // P2P Connection Setup
         function setupPeerConnection() {
-            // Generate random ID for this player
-            playerId = 'player-' + Math.floor(Math.random() * 1000000);
+            // Generate a simple random ID (no prefix needed)
+            playerId = Math.floor(Math.random() * 1000000).toString();
             
             // Initialize PeerJS with a reliable public server
             peer = new Peer(playerId, {
@@ -830,6 +830,24 @@
         const currentRoomIdSpan = document.getElementById('currentRoomId');
         const playerCountSpan = document.getElementById('playerCount');
         const playerListDiv = document.getElementById('playerList');
+        
+        // Update player name label when typing in the name field
+        playerNameInput.addEventListener('input', function() {
+            playerName = this.value || "You";
+            
+            // If local player exists, update its label
+            if (localPlayer) {
+                // Remove existing label
+                for (let i = localPlayer.children.length - 1; i >= 0; i--) {
+                    if (localPlayer.children[i] instanceof THREE.Sprite) {
+                        localPlayer.remove(localPlayer.children[i]);
+                    }
+                }
+                
+                // Create a new label with updated name
+                createPlayerLabel(localPlayer, playerName);
+            }
+        });
         
         hostButton.addEventListener('click', hostGame);
         joinButton.addEventListener('click', joinGame);
