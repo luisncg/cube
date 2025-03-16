@@ -282,8 +282,7 @@
                     scene.remove(players[id]);
                     
                     // Recreate player
-                    const playerDetail = Math.max(6, settings.objectDetail);
-                    const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
+                    const geometry = new THREE.BoxGeometry(1, 1, 1); // Cube instead of sphere
                     const colorIndex = Object.keys(players).indexOf(id) % playerColors.length + 1;
                     const material = new THREE.MeshStandardMaterial({ 
                         color: playerColors[colorIndex],
@@ -309,8 +308,7 @@
         // Create local player
         function createLocalPlayer() {
             const settings = qualitySettings[currentQuality];
-            const playerDetail = Math.max(6, settings.objectDetail);
-            const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
+            const geometry = new THREE.BoxGeometry(1, 1, 1); // Cube instead of sphere
             const material = new THREE.MeshStandardMaterial({ 
                 color: playerColors[0],
                 flatShading: currentQuality === 'low'
@@ -396,15 +394,15 @@
         function updateCameraPosition() {
             if (!localPlayer) return;
             
-            // Position camera right behind the player
-            const offset = new THREE.Vector3(0, 1.6, 2);
+            // Position camera right behind the player (increased distance from 2 to 4)
+            const offset = new THREE.Vector3(0, 2.5, 5);
             offset.applyQuaternion(localPlayer.quaternion);
             offset.add(localPlayer.position);
             
             camera.position.copy(offset);
             
             // Look at point slightly above player
-            const target = new THREE.Vector3(0, 0.5, -3);
+            const target = new THREE.Vector3(0, 0.8, -3);
             target.applyQuaternion(localPlayer.quaternion);
             target.add(localPlayer.position);
             
@@ -723,8 +721,7 @@
             
             // Create new player mesh
             const settings = qualitySettings[currentQuality];
-            const playerDetail = Math.max(6, settings.objectDetail);
-            const geometry = new THREE.SphereGeometry(0.5, playerDetail, playerDetail);
+            const geometry = new THREE.BoxGeometry(1, 1, 1); // Cube instead of sphere
             const colorIndex = Object.keys(players).length % playerColors.length + 1;
             const material = new THREE.MeshStandardMaterial({ 
                 color: playerColors[colorIndex],
