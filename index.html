@@ -156,18 +156,19 @@
             },
             medium: {
                 antialias: true,
-                objectCount: 5,         // Reduced from 10
-                objectDetail: 4,         // Reduced from 8
-                drawDistance: 70,       // Reduced from 500
+                objectCount: 3,         // Reduced from 10
+                objectDetail: 3,         // Reduced from 8
+                drawDistance: 60,       // Reduced from 500
                 shadowsEnabled: false,
-                pixelRatio: 0.95          // Added pixel ratio scaling
+                pixelRatio: 0.93          // Added pixel ratio scaling
             },
             low: {
                 antialias: false,
-                objectCount: 2,
-                objectDetail: 4,
+                objectCount: 3,
+                objectDetail: 1,
                 drawDistance: 40,
-                shadowsEnabled: false
+                shadowsEnabled: false,
+                pixelRatio: 0.8
             }
         };
         let currentQuality = 'medium';
